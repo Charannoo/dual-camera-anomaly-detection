@@ -1,0 +1,20 @@
+dataset:
+  data_dir: "data"
+  categories: ["cable_gland", "foam", "cookie", "potato"]
+  img_size: 224
+
+model:
+  rgb_backbone: "mobilenetv3_small_100"
+  feature_dim: 128
+  num_heads: 4
+  num_epochs: 10
+  batch_size: 8
+  lr: 0.001
+  weight_decay: 0.0001
+  checkpoint_dir: "outputs/checkpoints"
+
+clip:
+  model_name: "openai/clip-vit-base-patch32"
+
+cache:
+  features_dir: "outputs/features"

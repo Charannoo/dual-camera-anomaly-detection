@@ -1,0 +1,11 @@
+torch
+torchvision
+timm
+numpy
+scikit-learn
+opencv-python
+matplotlib
+Pillow
+pyyaml
+tifffile
+transformers
