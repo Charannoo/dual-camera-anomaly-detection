@@ -47,12 +47,14 @@ def train(category, epochs=None):
     model.train()
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     criterion = nn.MSELoss()
 
     print(f"Starting training for {category} on CPU...")
     for epoch in range(num_epochs):
         start_time = time.time()
         epoch_loss = 0.0
+        model.train()
 
         for batch_rgb, batch_depth, batch_text in dataloader:
             batch_rgb = batch_rgb.to(device)
@@ -71,13 +73,16 @@ def train(category, epochs=None):
                 print("WARNING: NaN loss detected!")
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             epoch_loss += loss.item() * len(batch_rgb)
 
+        scheduler.step()
         epoch_loss /= len(dataset)
         elapsed = time.time() - start_time
-        print(f"Epoch {epoch+1:02d}/{num_epochs:02d} | Loss: {epoch_loss:.6f} | Time: {elapsed:.2f}s")
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"Epoch {epoch+1:02d}/{num_epochs:02d} | Loss: {epoch_loss:.6f} | LR: {current_lr:.2e} | Time: {elapsed:.2f}s")
 
     checkpoint_path = os.path.join(checkpoint_dir, f"{category}_fusion.pt")
     torch.save(model.state_dict(), checkpoint_path)

@@ -67,7 +67,10 @@ class ResidualScorer:
             dist = torch.sqrt(torch.clamp(dist_sq, min=0.0))
 
             anomaly_map_low = dist.view(B, H, W)
-            image_scores, _ = torch.max(anomaly_map_low.view(B, -1), dim=-1)
+            flat_map = anomaly_map_low.view(B, -1)
+            max_scores, _ = torch.max(flat_map, dim=-1)
+            mean_scores = torch.mean(flat_map, dim=-1)
+            image_scores = 0.7 * max_scores + 0.3 * mean_scores
 
             anomaly_map_high = F.interpolate(
                 anomaly_map_low.unsqueeze(1),

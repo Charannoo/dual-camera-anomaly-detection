@@ -24,6 +24,9 @@ venv/
 .vscode/
 .idea/
 
+# Kaggle upload artifacts
+kaggle_upload/
+
 # OS
 .DS_Store
 Thumbs.db

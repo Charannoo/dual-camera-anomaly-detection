@@ -1,16 +1,16 @@
 dataset:
   data_dir: "data"
-  categories: ["cable_gland", "foam", "cookie", "potato"]
+  categories: ["bagel", "cable_gland", "carrot", "cookie", "dowel", "foam"]
   img_size: 224
 
 model:
   rgb_backbone: "mobilenetv3_small_100"
   feature_dim: 128
   num_heads: 4
-  num_epochs: 10
+  num_epochs: 30
   batch_size: 8
-  lr: 0.001
-  weight_decay: 0.0001
+  lr: 0.0005
+  weight_decay: 0.00001
   checkpoint_dir: "outputs/checkpoints"
 
 clip:
