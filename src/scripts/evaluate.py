@@ -61,10 +61,10 @@ def evaluate(category):
     results = scorer.score(test_data["rgb_feats"], test_data["depth_feats"], model,
                            text_tokens=test_data["text_tokens"])
 
-    img_scores = results["image_score"].numpy()
+    img_scores = results["image_score"].cpu().numpy()
     img_labels = test_data["labels"].numpy()
 
-    pixel_scores = results["anomaly_map"].numpy()
+    pixel_scores = results["anomaly_map"].cpu().numpy()
     pixel_gts = test_data["gts"].numpy().squeeze(1)
 
     i_auroc = roc_auc_score(img_labels, img_scores)
