@@ -11,13 +11,13 @@ class ResidualScorer:
     def _get_device(self, model):
         return next(model.parameters()).device
 
-    def _move(self, *tensors, device):
+    def _move(self, tensors, device):
         return tuple(t.to(device) for t in tensors)
 
     def fit(self, train_rgb_feats, train_depth_feats, model, text_tokens=None):
         model.eval()
         device = self._get_device(model)
-        train_rgb_feats, train_depth_feats = self._move(train_rgb_feats, train_depth_feats, device)
+        train_rgb_feats, train_depth_feats = self._move((train_rgb_feats, train_depth_feats), device)
         if text_tokens is not None:
             text_tokens = text_tokens.to(device)
         with torch.no_grad():
@@ -44,7 +44,7 @@ class ResidualScorer:
 
         model.eval()
         device = self._get_device(model)
-        rgb_feats, depth_feats = self._move(rgb_feats, depth_feats, device)
+        rgb_feats, depth_feats = self._move((rgb_feats, depth_feats), device)
         self.mean = self.mean.to(device)
         self.inv_cov = self.inv_cov.to(device)
         if text_tokens is not None:
