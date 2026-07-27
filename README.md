@@ -162,7 +162,7 @@ dual-camera-anomaly-detection/
 
 The pipeline is designed to run entirely on CPU. For faster training, copy the project
 to a Kaggle or Colab notebook with GPU access. Feature extraction and evaluation
-are the main GPU受益者 (backbone inference is ~10x faster on GPU).
+are the main GPU (backbone inference is ~10x faster on GPU).
 
 ---
 
