@@ -7,7 +7,6 @@ import numpy as np
 from collections import defaultdict
 from sklearn.metrics import roc_auc_score
 
-from src.datasets.mvtec_3d import MVTec3DADataset
 from src.models.rgb_backbone import RGBBackbone
 from src.models.depth_backbone import DepthBackbone
 from src.models.clip_branch import ClipBranch
@@ -42,44 +41,46 @@ def safe_auroc(labels, scores):
         return float('nan')
     return roc_auc_score(labels, scores)
 
-def evaluate(category, scorer_type="mahalanobis", shared_models=None):
+def load_cached_features(features_dir, category, split):
+    cache_path = os.path.join(features_dir, f"{category}_{split}.pt")
+    if not os.path.exists(cache_path):
+        raise FileNotFoundError(f"Cache not found: {cache_path}. Run extract_features.py first.")
+    cache = torch.load(cache_path, map_location="cpu")
+    return cache
+
+def evaluate(category, scorer_type="mahalanobis"):
     config = load_config()
-    features_dir = config["cache"]["features_dir"]
     checkpoint_dir = config["model"]["checkpoint_dir"]
+    features_dir = config["cache"]["features_dir"]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\nLoading cached features for {category}...")
+    train_data = load_cached_features(features_dir, category, "train")
+    test_data = load_cached_features(features_dir, category, "test")
 
-    train_path = os.path.join(features_dir, f"{category}_train.pt")
-    test_path = os.path.join(features_dir, f"{category}_test.pt")
+    print(f"  Train: {train_data['rgb_feats'].shape[0]} samples")
+    print(f"  Test:  {test_data['rgb_feats'].shape[0]} samples")
 
-    if not os.path.exists(train_path) or not os.path.exists(test_path):
-        raise FileNotFoundError("Cached features not found. Extract them first.")
-
-    train_data = torch.load(train_path)
-    test_data = torch.load(test_path)
-
-    model = CrossAttentionFusion().to(device)
-    e2e_path = os.path.join(checkpoint_dir, f"{category}_e2e.pt")
+    model = CrossAttentionFusion()
     checkpoint_path = os.path.join(checkpoint_dir, f"{category}_fusion.pt")
 
-    if os.path.exists(e2e_path):
-        ckpt = torch.load(e2e_path, map_location=device)
-        model.load_state_dict(ckpt["fusion"])
-        print(f"Loaded E2E fusion weights from {e2e_path}")
-    elif os.path.exists(checkpoint_path):
-        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-        print(f"Loaded fusion checkpoint from {checkpoint_path}")
+    if os.path.exists(checkpoint_path):
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        if isinstance(ckpt, dict) and "fusion" in ckpt:
+            model.load_state_dict(ckpt["fusion"])
+        else:
+            model.load_state_dict(ckpt)
+        print(f"  Loaded fusion weights from {checkpoint_path}")
     else:
-        print("WARNING: No checkpoint found, using random model.")
+        print(f"  WARNING: No checkpoint found at {checkpoint_path}, using random model.")
 
     model.eval()
 
     if scorer_type == "memorybank":
         scorer = MemoryBankScorer(k=5)
-        print("Using MemoryBankScorer (k-NN, k=5)")
+        print("  Using MemoryBankScorer (k-NN, k=5)")
     else:
         scorer = ResidualScorer()
-        print("Using ResidualScorer (Mahalanobis)")
+        print("  Using ResidualScorer (Mahalanobis)")
 
     scorer.fit(train_data["rgb_feats"], train_data["depth_feats"], model,
                text_tokens=train_data["text_tokens"])
@@ -147,38 +148,36 @@ def evaluate(category, scorer_type="mahalanobis", shared_models=None):
     print(f"\n  Fusion Model Params: {fusion_params:,}")
     print(f"  Fusion Model Size:   {fusion_size_kb:.1f} KB")
 
-    if shared_models is not None:
-        rgb_backbone = shared_models["rgb_backbone"]
-        depth_backbone = shared_models["depth_backbone"]
-        clip_branch = shared_models["clip_branch"]
-    else:
-        rgb_backbone = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
-        depth_backbone = DepthBackbone().to(device)
-        clip_config = config.get("clip", {})
-        clip_branch = ClipBranch(
-            model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
-        ).to(device)
-        rgb_backbone.eval()
-        depth_backbone.eval()
-        clip_branch.eval()
+    config = load_config()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lat_rgb = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
+    lat_rgb.eval()
+    lat_depth = DepthBackbone().to(device)
+    lat_depth.eval()
+    clip_config = config.get("clip", {})
+    lat_clip = ClipBranch(
+        model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
+    ).to(device)
+    lat_clip.eval()
+    model.to(device)
 
     dummy_rgb = torch.randn(1, 3, 224, 224).to(device)
     dummy_depth = torch.randn(1, 1, 224, 224).to(device)
 
+    num_runs = 20
     for _ in range(5):
         with torch.no_grad():
-            f_rgb = rgb_backbone(dummy_rgb)
-            f_dep = depth_backbone(dummy_depth)
-            text_tok, _ = clip_branch(dummy_rgb)
+            f_rgb = lat_rgb(dummy_rgb)
+            f_dep = lat_depth(dummy_depth)
+            text_tok, _ = lat_clip(dummy_rgb)
             _ = scorer.score(f_rgb, f_dep, model, text_tokens=text_tok)
 
-    num_runs = 20
     start_time = time.time()
     for _ in range(num_runs):
         with torch.no_grad():
-            f_rgb = rgb_backbone(dummy_rgb)
-            f_dep = depth_backbone(dummy_depth)
-            text_tok, _ = clip_branch(dummy_rgb)
+            f_rgb = lat_rgb(dummy_rgb)
+            f_dep = lat_depth(dummy_depth)
+            text_tok, _ = lat_clip(dummy_rgb)
             _ = scorer.score(f_rgb, f_dep, model, text_tokens=text_tok)
     avg_latency_ms = ((time.time() - start_time) / num_runs) * 1000
     print(f"  CPU Latency:         {avg_latency_ms:.1f} ms/image")
@@ -199,30 +198,10 @@ def evaluate_all(scorer_type="mahalanobis"):
     config = load_config()
     categories = config["dataset"]["categories"]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-    print("Loading backbones and CLIP model ONCE for all evaluations...")
-    rgb_backbone = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
-    depth_backbone = DepthBackbone().to(device)
-    clip_config = config.get("clip", {})
-    clip_branch = ClipBranch(
-        model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
-    ).to(device)
-
-    rgb_backbone.eval()
-    depth_backbone.eval()
-    clip_branch.eval()
-
-    shared_models = {
-        "rgb_backbone": rgb_backbone,
-        "depth_backbone": depth_backbone,
-        "clip_branch": clip_branch,
-    }
-
     all_results = []
     for cat in categories:
         try:
-            result = evaluate(cat, scorer_type=scorer_type, shared_models=shared_models)
+            result = evaluate(cat, scorer_type=scorer_type)
             all_results.append(result)
         except Exception as e:
             print(f"ERROR evaluating {cat}: {e}")

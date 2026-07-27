@@ -5,7 +5,6 @@ import yaml
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
 
 from src.models.fusion import CrossAttentionFusion
 
@@ -17,7 +16,6 @@ def train(category, epochs=None):
     config = load_config()
 
     num_epochs = epochs if epochs is not None else config["model"]["num_epochs"]
-    batch_size = config["model"]["batch_size"]
     lr = config["model"]["lr"]
     weight_decay = config["model"]["weight_decay"]
     checkpoint_dir = config["model"]["checkpoint_dir"]
@@ -25,74 +23,51 @@ def train(category, epochs=None):
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    cache_path = os.path.join(features_dir, f"{category}_train.pt")
-    if not os.path.exists(cache_path):
-        raise FileNotFoundError(f"Cached features not found at {cache_path}. Run extract_features.py first.")
+    print(f"Loading cached features for {category}...")
+    train_cache = os.path.join(features_dir, f"{category}_train.pt")
+    if not os.path.exists(train_cache):
+        print(f"ERROR: {train_cache} not found. Run extract_features.py first.")
+        return
 
-    print(f"Loading cached training features from {cache_path}...")
-    cached_data = torch.load(cache_path)
-    rgb_feats = cached_data["rgb_feats"]
-    depth_feats = cached_data["depth_feats"]
-    text_tokens = cached_data["text_tokens"]
+    data = torch.load(train_cache, map_location="cpu")
+    rgb_feats = data["rgb_feats"]
+    depth_feats = data["depth_feats"]
+    text_tokens = data["text_tokens"]
+    print(f"  Loaded {rgb_feats.shape[0]} train samples.")
 
-    print(f"Loaded {len(rgb_feats)} training samples.")
+    fusion_model = CrossAttentionFusion()
+    fusion_model.train()
 
-    dataset = TensorDataset(rgb_feats, depth_feats, text_tokens)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    model = CrossAttentionFusion().to(device)
-    model.train()
-
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    print("=== OPTIMIZER PARAMETER LIST ===")
-    for name, param in model.named_parameters():
-        print(f"  {name}: shape={list(param.shape)}, requires_grad={param.requires_grad}")
-    print("================================")
+    optimizer = optim.AdamW(fusion_model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     criterion = nn.MSELoss()
 
-    print(f"Starting training for {category} on CPU...")
+    print(f"  Fusion params: {sum(p.numel() for p in fusion_model.parameters()):,}")
+
+    print(f"Starting training for {category}...")
     for epoch in range(num_epochs):
         start_time = time.time()
-        epoch_loss = 0.0
-        model.train()
 
-        for batch_rgb, batch_depth, batch_text in dataloader:
-            batch_rgb = batch_rgb.to(device)
-            batch_depth = batch_depth.to(device)
-            batch_text = batch_text.to(device)
-
-            optimizer.zero_grad()
-
-            outputs = model(batch_rgb, batch_depth, batch_text)
-
-            loss_rgb = criterion(outputs["pred_rgb"], outputs["target_rgb"])
-            loss_depth = criterion(outputs["pred_depth"], outputs["target_depth"])
-            loss = loss_rgb + loss_depth
-
-            if torch.isnan(loss):
-                print("WARNING: NaN loss detected!")
-
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-
-            epoch_loss += loss.item() * len(batch_rgb)
-
+        optimizer.zero_grad()
+        outputs = fusion_model(rgb_feats, depth_feats, text_tokens)
+        loss_rgb = criterion(outputs["pred_rgb"], outputs["target_rgb"])
+        loss_depth = criterion(outputs["pred_depth"], outputs["target_depth"])
+        loss = loss_rgb + loss_depth
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(fusion_model.parameters(), max_norm=1.0)
+        optimizer.step()
         scheduler.step()
-        epoch_loss /= len(dataset)
+
         elapsed = time.time() - start_time
         current_lr = scheduler.get_last_lr()[0]
-        print(f"Epoch {epoch+1:02d}/{num_epochs:02d} | Loss: {epoch_loss:.6f} | LR: {current_lr:.2e} | Time: {elapsed:.2f}s")
+        print(f"Epoch {epoch+1:02d}/{num_epochs:02d} | Loss: {loss.item():.6f} | LR: {current_lr:.2e} | Time: {elapsed:.2f}s")
 
     checkpoint_path = os.path.join(checkpoint_dir, f"{category}_fusion.pt")
-    torch.save(model.state_dict(), checkpoint_path)
+    torch.save({
+        "fusion": fusion_model.state_dict(),
+    }, checkpoint_path)
     print(f"Saved checkpoint to {checkpoint_path}\n")
-    return model
+    return fusion_model
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -41,6 +41,10 @@ def get_defect_type_from_path(rgb_path):
 
 
 def generate_explanations(category="cable_gland", num_per_type=2):
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
     config = load_config()
     data_dir = config["dataset"]["data_dir"]
     img_size = config["dataset"]["img_size"]
@@ -60,7 +64,11 @@ def generate_explanations(category="cable_gland", num_per_type=2):
 
     checkpoint_path = os.path.join(checkpoint_dir, f"{category}_fusion.pt")
     if os.path.exists(checkpoint_path):
-        fusion_model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        ckpt = torch.load(checkpoint_path, map_location=device)
+        if isinstance(ckpt, dict) and "fusion" in ckpt:
+            fusion_model.load_state_dict(ckpt["fusion"])
+        else:
+            fusion_model.load_state_dict(ckpt)
         print(f"Loaded fusion model weights from {checkpoint_path}")
     else:
         raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
@@ -242,6 +250,21 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--category", type=str, default="cable_gland")
+    parser.add_argument("--all", action="store_true", help="Run all categories")
     parser.add_argument("--num_per_type", type=int, default=2)
     args = parser.parse_args()
-    generate_explanations(args.category, args.num_per_type)
+
+    if args.all:
+        config = load_config()
+        categories = config["dataset"]["categories"]
+    else:
+        categories = [args.category]
+
+    total = 0
+    for cat in categories:
+        print(f"\n{'='*60}")
+        print(f"  CATEGORY: {cat}")
+        print(f"{'='*60}")
+        generate_explanations(cat, args.num_per_type)
+        total += 1
+    print(f"\nDone: {total} categories processed.")
