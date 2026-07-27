@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Results Explorer — Dual-Camera Anomaly Detection</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="landing">
+  <h1>Dual-Camera Anomaly Detection</h1>
+  <p>3D Results Explorer — pre-computed pipeline outputs from MVTec 3D-AD evaluation</p>
+  <button id="enter-btn">Explore Results</button>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <span class="title">Results Explorer</span>
+    <span class="subtitle" id="stats"></span>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <label for="cat-select">Category</label>
+      <select id="cat-select"></select>
+      <div id="sample-list"></div>
+    </aside>
+
+    <section id="viewer">
+      <div id="three-container"></div>
+      <div id="viewer-controls">
+        <button id="toggle-color" class="ctrl-btn active">Anomaly Intensity</button>
+        <button id="toggle-color2" class="ctrl-btn">RGB Texture</button>
+        <span class="ctrl-hint">Drag to rotate · Scroll to zoom · Right-drag to pan</span>
+      </div>
+    </section>
+
+    <aside id="info-panel">
+      <div class="info-section">
+        <h3>RGB Input</h3>
+        <img id="info-rgb" src="" alt="RGB">
+      </div>
+      <div class="info-section">
+        <h3>Anomaly Heatmap</h3>
+        <img id="info-heatmap" src="" alt="Heatmap">
+      </div>
+      <div class="info-section">
+        <h3>Scores</h3>
+        <table id="info-table">
+          <tr><td class="lbl">Calibrated</td><td id="info-score" class="val">—</td></tr>
+          <tr><td class="lbl">Raw</td><td id="info-raw" class="val">—</td></tr>
+          <tr><td class="lbl">Ground Truth</td><td id="info-gt" class="val">—</td></tr>
+          <tr><td class="lbl">Defect Type</td><td id="info-dtype" class="val">—</td></tr>
+        </table>
+      </div>
+      <div class="info-section">
+        <h3>CLIP Top Match</h3>
+        <p id="info-clip" class="clip-note">—</p>
+        <p class="clip-warning">Architectural demo — CLIP branch is untrained, see Limitations</p>
+      </div>
+      <div class="info-section">
+        <h3>Threshold</h3>
+        <div class="threshold-row">
+          <input type="range" id="threshold-slider" min="0" max="1" step="0.001" value="0.5">
+          <span id="threshold-val">0.500</span>
+        </div>
+        <div id="threshold-badge" class="badge badge-normal">Normal</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -129,6 +129,38 @@ Sample 000 | Decision: ANOMALOUS
 
 ---
 
+## 3D Results Explorer
+
+A static, single-page web app that renders the pipeline's pre-computed outputs as an interactive 3D point cloud results explorer. Built with plain HTML/CSS/JS + Three.js via CDN — no build step required.
+
+### Setup
+
+**1. Export data for the website (run once):**
+```bash
+python -m src.scripts.export_web_data
+```
+This reads cached features and checkpoints from `outputs/`, computes anomaly maps via the fusion model, and writes per-sample assets (point cloud, heatmap, RGB thumbnail, metadata) to `web/data/`.
+
+**2. Serve and open:**
+```bash
+cd web
+python -m http.server 8000
+```
+Then open `http://localhost:8000` in a browser.
+
+> **Note:** A local server is required. The `file://` protocol blocks `fetch()` calls due to browser CORS restrictions, so `web/index.html` cannot be opened directly from disk.
+
+### Features
+
+- **3D point cloud** of each depth scan, colored by anomaly intensity (blue = normal, red = high anomaly), rotatable/zoomable via mouse
+- **RGB texture toggle** to overlay the original image colors on the point cloud
+- **Category + sample picker** in the left sidebar
+- **Info panel** with RGB thumbnail, 2D anomaly heatmap, calibrated score, ground truth label, CLIP top-match phrase (labeled as architectural demo — CLIP branch is untrained)
+- **Threshold slider** for client-side normal/anomalous badge recomputation (does not modify any file or checkpoint)
+- Dark, technical aesthetic — no live inference, no streaming, no operator-feedback loop
+
+---
+
 ## Project Structure
 
 ```
@@ -149,8 +181,14 @@ dual-camera-anomaly-detection/
       train_e2e.py            # End-to-end backbone + fusion training
       evaluate.py             # Full evaluation with per-defect breakdown
       visualize_explainability.py  # 8-panel explainability plots
+      export_web_data.py      # Export assets for 3D Results Explorer
   configs/                    # config.yaml (category list + hyperparams)
   outputs/                    # features, checkpoints, eval results (gitignored)
+  web/
+    index.html                # 3D Results Explorer (Three.js)
+    style.css
+    app.js
+    data/                     # Generated per-sample assets (gitignored)
   requirements.txt
   README.md
   PROGRESS.md

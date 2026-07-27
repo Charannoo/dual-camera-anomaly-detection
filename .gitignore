@@ -4,6 +4,9 @@ data/
 # Cached features, checkpoints, eval results
 outputs/
 
+# Generated web explorer data (run export_web_data.py to regenerate)
+web/data/
+
 # Python
 __pycache__/
 *.py[cod]
