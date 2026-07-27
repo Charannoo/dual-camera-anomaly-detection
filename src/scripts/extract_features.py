@@ -13,12 +13,13 @@ def load_config(config_path="configs/config.yaml"):
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
-def extract_and_cache():
+def extract_and_cache(category_filter=None):
     config = load_config()
     data_dir = config["dataset"]["data_dir"]
     categories = config["dataset"]["categories"]
     img_size = config["dataset"]["img_size"]
     features_dir = config["cache"]["features_dir"]
+    checkpoint_dir = config["model"]["checkpoint_dir"]
     os.makedirs(features_dir, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,6 +35,23 @@ def extract_and_cache():
     rgb_model.eval()
     depth_model.eval()
     clip_model.eval()
+
+    if category_filter:
+        categories = [c for c in categories if c in category_filter]
+
+    for category in categories:
+        e2e_path = os.path.join(checkpoint_dir, f"{category}_e2e.pt")
+        if os.path.exists(e2e_path):
+            ckpt = torch.load(e2e_path, map_location=device)
+            if "rgb_backbone" in ckpt:
+                rgb_model.model.load_state_dict(ckpt["rgb_backbone"])
+                rgb_model.unfreeze()
+                print(f"Loaded E2E RGB backbone from {e2e_path}")
+            if "depth_backbone" in ckpt:
+                depth_model.load_state_dict(ckpt["depth_backbone"])
+                print(f"Loaded E2E depth backbone from {e2e_path}")
+            rgb_model.eval()
+            depth_model.eval()
 
     for category in categories:
         for split in ["train", "test"]:

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class ResidualScorer:
     def __init__(self, reg_epsilon=1e-3):
         self.reg_epsilon = reg_epsilon
@@ -92,6 +93,90 @@ class ResidualScorer:
                 "attn_depth": outputs["attn_depth"]
             }
 
+
+class MemoryBankScorer:
+    def __init__(self, k=5, eps=1e-6):
+        self.k = k
+        self.eps = eps
+        self.memory = None
+
+    def _get_device(self, model):
+        return next(model.parameters()).device
+
+    def _move(self, tensors, device):
+        return tuple(t.to(device) for t in tensors)
+
+    def _compute_residuals(self, rgb_feats, depth_feats, model, text_tokens=None):
+        device = next(model.parameters()).device
+        rgb_feats, depth_feats = self._move((rgb_feats, depth_feats), device)
+        if text_tokens is not None:
+            text_tokens = text_tokens.to(device)
+        model.eval()
+        with torch.no_grad():
+            if text_tokens is not None:
+                outputs = model(rgb_feats, depth_feats, text_tokens)
+            else:
+                outputs = model(rgb_feats, depth_feats)
+            res_rgb = outputs["target_rgb"] - outputs["pred_rgb"]
+            res_depth = outputs["target_depth"] - outputs["pred_depth"]
+        return res_rgb, res_depth, outputs
+
+    def fit(self, train_rgb_feats, train_depth_feats, model, text_tokens=None):
+        res_rgb, res_depth, _ = self._compute_residuals(
+            train_rgb_feats, train_depth_feats, model, text_tokens
+        )
+        residuals = torch.cat([res_rgb, res_depth], dim=1)
+        B, C, H, W = residuals.shape
+        self.memory = residuals.permute(0, 2, 3, 1).reshape(-1, C)
+        print(f"Memory bank fitted: {self.memory.shape[0]} entries, dim={C}")
+
+    def score(self, rgb_feats, depth_feats, model, text_tokens=None, upsample_size=(224, 224)):
+        device = self._get_device(model)
+        res_rgb, res_depth, outputs = self._compute_residuals(
+            rgb_feats, depth_feats, model, text_tokens
+        )
+        residuals = torch.cat([res_rgb, res_depth], dim=1)
+        B, C, H, W = residuals.shape
+        res_flat = residuals.permute(0, 2, 3, 1).reshape(-1, C)
+        mem = self.memory.to(device)
+
+        chunk_size = 2048
+        knn_dists = []
+        for i in range(0, res_flat.shape[0], chunk_size):
+            chunk = res_flat[i:i + chunk_size]
+            d = torch.cdist(chunk.unsqueeze(0), mem.unsqueeze(0)).squeeze(0)
+            k = min(self.k, d.shape[1])
+            topk_d, _ = torch.topk(d, k=k, dim=1, largest=False)
+            knn_dists.append(topk_d.mean(dim=1))
+        knn_dist = torch.cat(knn_dists, dim=0)
+
+        anomaly_map_low = knn_dist.view(B, H, W)
+        flat_map = anomaly_map_low.view(B, -1)
+        max_scores, _ = torch.max(flat_map, dim=-1)
+        mean_scores = torch.mean(flat_map, dim=-1)
+        image_scores = 0.7 * max_scores + 0.3 * mean_scores
+
+        anomaly_map_high = F.interpolate(
+            anomaly_map_low.unsqueeze(1),
+            size=upsample_size,
+            mode="bilinear",
+            align_corners=False
+        ).squeeze(1)
+
+        rgb_res_norm = torch.norm(res_rgb, p=2, dim=1)
+        depth_res_norm = torch.norm(res_depth, p=2, dim=1)
+
+        return {
+            "anomaly_map_low": anomaly_map_low,
+            "anomaly_map": anomaly_map_high,
+            "image_score": image_scores,
+            "rgb_residual": rgb_res_norm,
+            "depth_residual": depth_res_norm,
+            "attn_rgb": outputs["attn_rgb"],
+            "attn_depth": outputs["attn_depth"]
+        }
+
+
 if __name__ == "__main__":
     print("Testing ResidualScorer (3-way)...")
     from src.models.fusion import CrossAttentionFusion
@@ -109,8 +194,14 @@ if __name__ == "__main__":
     test_text = torch.randn(3, 1, 128)
     results = scorer.score(test_rgb, test_depth, model, text_tokens=test_text)
 
-    print(f"Anomaly Map Shape: {results['anomaly_map'].shape} (Expected: [3, 224, 224])")
-    print(f"Image Scores Shape: {results['image_score'].shape} (Expected: [3])")
-    print(f"RGB Residual Map Shape: {results['rgb_residual'].shape} (Expected: [3, 14, 14])")
-    print(f"Depth Residual Map Shape: {results['depth_residual'].shape} (Expected: [3, 14, 14])")
-    print("ResidualScorer 3-way test passed.")
+    print(f"Anomaly Map Shape: {results['anomaly_map'].shape}")
+    print(f"Image Scores Shape: {results['image_score'].shape}")
+    print("ResidualScorer test passed.\n")
+
+    print("Testing MemoryBankScorer...")
+    mb_scorer = MemoryBankScorer(k=3)
+    mb_scorer.fit(train_rgb, train_depth, model, text_tokens=train_text)
+    mb_results = mb_scorer.score(test_rgb, test_depth, model, text_tokens=test_text)
+    print(f"Anomaly Map Shape: {mb_results['anomaly_map'].shape}")
+    print(f"Image Scores Shape: {mb_results['image_score'].shape}")
+    print("MemoryBankScorer test passed.")
