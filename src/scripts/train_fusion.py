@@ -47,6 +47,11 @@ def train(category, epochs=None):
     model.train()
 
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    print("=== OPTIMIZER PARAMETER LIST ===")
+    for name, param in model.named_parameters():
+        print(f"  {name}: shape={list(param.shape)}, requires_grad={param.requires_grad}")
+    print("================================")
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     criterion = nn.MSELoss()
 

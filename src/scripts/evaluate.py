@@ -42,13 +42,12 @@ def safe_auroc(labels, scores):
         return float('nan')
     return roc_auc_score(labels, scores)
 
-def evaluate(category, scorer_type="mahalanobis"):
+def evaluate(category, scorer_type="mahalanobis", shared_models=None):
     config = load_config()
     features_dir = config["cache"]["features_dir"]
     checkpoint_dir = config["model"]["checkpoint_dir"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
 
     train_path = os.path.join(features_dir, f"{category}_train.pt")
     test_path = os.path.join(features_dir, f"{category}_test.pt")
@@ -115,41 +114,53 @@ def evaluate(category, scorer_type="mahalanobis"):
 
     test_rgb_paths = test_data["rgb_paths"]
     defect_types = [get_defect_type_from_path(p) for p in test_rgb_paths]
-    defect_groups = defaultdict(lambda: {"scores": [], "labels": []})
-    for i, dt in enumerate(defect_types):
-        defect_groups[dt]["scores"].append(cal_scores[i])
-        defect_groups[dt]["labels"].append(img_labels[i])
 
-    print(f"\n  Per-defect-type breakdown (calibrated):")
-    print(f"  {'Type':<20s} {'Count':>5s} {'AUROC':>8s}")
-    print(f"  {'-'*35}")
+    normal_indices = [i for i, l in enumerate(img_labels) if l == 0]
+    normal_scores = cal_scores[normal_indices]
+    normal_labels = img_labels[normal_indices]
+
+    defect_type_indices = defaultdict(list)
+    for i, dt in enumerate(defect_types):
+        if img_labels[i] == 1:
+            defect_type_indices[dt].append(i)
+
+    print(f"\n  Per-defect-type breakdown vs {len(normal_indices)} Normal test images:")
+    print(f"  {'Type':<20s} {'Anom Count':>10s} {'AUROC':>8s}")
+    print(f"  {'-'*42}")
 
     defect_aurocs = {}
-    for dt in sorted(defect_groups.keys()):
-        dg = defect_groups[dt]
-        labels_arr = np.array(dg["labels"])
-        scores_arr = np.array(dg["scores"])
-        n = len(labels_arr)
-        auroc = safe_auroc(labels_arr, scores_arr)
-        auroc_str = f"{auroc:.4f}" if not np.isnan(auroc) else "N/A (1 class)"
+    for dt in sorted(defect_type_indices.keys()):
+        anom_idx = defect_type_indices[dt]
+        anom_scores = cal_scores[anom_idx]
+        anom_labels = img_labels[anom_idx]
+
+        comb_scores = np.concatenate([anom_scores, normal_scores])
+        comb_labels = np.concatenate([anom_labels, normal_labels])
+
+        auroc = safe_auroc(comb_labels, comb_scores)
+        auroc_str = f"{auroc:.4f}" if not np.isnan(auroc) else "N/A"
         defect_aurocs[dt] = auroc
-        print(f"  {DEFECT_DESCRIPTIONS.get(dt, dt):<20s} {n:>5d} {auroc_str:>8s}")
+        print(f"  {DEFECT_DESCRIPTIONS.get(dt, dt):<20s} {len(anom_idx):>10d} {auroc_str:>8s}")
 
     fusion_size_kb = get_model_size_kb(model)
     fusion_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"\n  Fusion Model Params: {fusion_params:,}")
     print(f"  Fusion Model Size:   {fusion_size_kb:.1f} KB")
 
-    rgb_backbone = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
-    depth_backbone = DepthBackbone().to(device)
-    clip_config = config.get("clip", {})
-    clip_branch = ClipBranch(
-        model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
-    ).to(device)
-
-    rgb_backbone.eval()
-    depth_backbone.eval()
-    clip_branch.eval()
+    if shared_models is not None:
+        rgb_backbone = shared_models["rgb_backbone"]
+        depth_backbone = shared_models["depth_backbone"]
+        clip_branch = shared_models["clip_branch"]
+    else:
+        rgb_backbone = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
+        depth_backbone = DepthBackbone().to(device)
+        clip_config = config.get("clip", {})
+        clip_branch = ClipBranch(
+            model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
+        ).to(device)
+        rgb_backbone.eval()
+        depth_backbone.eval()
+        clip_branch.eval()
 
     dummy_rgb = torch.randn(1, 3, 224, 224).to(device)
     dummy_depth = torch.randn(1, 1, 224, 224).to(device)
@@ -187,10 +198,31 @@ def evaluate(category, scorer_type="mahalanobis"):
 def evaluate_all(scorer_type="mahalanobis"):
     config = load_config()
     categories = config["dataset"]["categories"]
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    print("Loading backbones and CLIP model ONCE for all evaluations...")
+    rgb_backbone = RGBBackbone(config["model"]["rgb_backbone"]).to(device)
+    depth_backbone = DepthBackbone().to(device)
+    clip_config = config.get("clip", {})
+    clip_branch = ClipBranch(
+        model_name=clip_config.get("model_name", "openai/clip-vit-base-patch32")
+    ).to(device)
+
+    rgb_backbone.eval()
+    depth_backbone.eval()
+    clip_branch.eval()
+
+    shared_models = {
+        "rgb_backbone": rgb_backbone,
+        "depth_backbone": depth_backbone,
+        "clip_branch": clip_branch,
+    }
+
     all_results = []
     for cat in categories:
         try:
-            result = evaluate(cat, scorer_type=scorer_type)
+            result = evaluate(cat, scorer_type=scorer_type, shared_models=shared_models)
             all_results.append(result)
         except Exception as e:
             print(f"ERROR evaluating {cat}: {e}")
