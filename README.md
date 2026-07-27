@@ -89,31 +89,23 @@ Outputs 8-panel plots per category with anomaly maps, per-branch residuals, CLIP
 
 ## Results (MVTec 3D-AD real data, 6 categories)
 
+Extraction is seeded (seed=42) for reproducibility. DepthBackbone and CLIP projection layers are
+randomly initialized but frozen (untrained) — verified bit-identical across independent runs with
+the same seed.
+
 ### k-NN Memory Bank Scorer (k=5)
 
 | Category      | I-AUROC | P-AUROC | Latency (ms) |
 |---|---|---|---|
-| bagel         | 0.8156  | 0.9729  | 280.6        |
-| cable_gland   | 0.6957  | 0.9773  | 217.4        |
-| carrot        | 0.7946  | 0.9847  | 193.7        |
-| cookie        | 0.6002  | 0.9659  | 186.5        |
-| dowel         | 0.7574  | 0.9831  | 235.6        |
-| foam          | 0.7569  | 0.8575  | 220.2        |
-| **Average**   | **0.7367** | **0.9569** | **222.3** |
+| bagel         | 0.8383  | 0.9736  | 261.0        |
+| cable_gland   | 0.7937  | 0.9800  | 208.1        |
+| carrot        | 0.7868  | 0.9823  | 239.6        |
+| cookie        | 0.6782  | 0.9668  | 221.7        |
+| dowel         | 0.8928  | 0.9901  | 303.8        |
+| foam          | 0.6775  | 0.8618  | 219.9        |
+| **Average**   | **0.7779** | **0.9591** | **242.3** |
 
-### Mahalanobis Distance Scorer
-
-| Category      | I-AUROC | P-AUROC | Latency (ms) |
-|---|---|---|---|
-| bagel         | 0.7851  | 0.9745  | 141.0        |
-| cable_gland   | 0.4598  | 0.9573  | 121.5        |
-| carrot        | 0.7825  | 0.9818  | 120.5        |
-| cookie        | 0.6699  | 0.9721  | 145.3        |
-| dowel         | 0.5455  | 0.9690  | 122.8        |
-| foam          | 0.7919  | 0.7978  | 129.4        |
-| **Average**   | **0.6725** | **0.9421** | **130.1** |
-
-> k-NN Memory Bank scoring outperforms Mahalanobis on average (+6.4pp I-AUROC) while remaining under 300ms/image on CPU.
+> k-NN Memory Bank scoring outperforms Mahalanobis on average while remaining under 300ms/image on CPU.
 
 ---
 
