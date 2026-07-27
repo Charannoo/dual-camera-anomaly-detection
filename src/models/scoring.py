@@ -34,7 +34,7 @@ class ResidualScorer:
 
         self.mean = torch.mean(residuals_flat, dim=0)
         cov = torch.cov(residuals_flat.T)
-        cov_reg = cov + self.reg_epsilon * torch.eye(cov.shape[0])
+        cov_reg = cov + self.reg_epsilon * torch.eye(cov.shape[0], device=device)
         self.inv_cov = torch.linalg.inv(cov_reg)
         print("Scorer covariance fitting completed successfully.")
 
