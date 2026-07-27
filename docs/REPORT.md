@@ -162,3 +162,9 @@ In both cases, the RGB residual map and anomaly heatmap correctly localize the d
 ### 7.3 Coverage
 
 50 visualizations were generated across all 6 categories: 8 samples per category (2 per defect type), except carrot which has 5 defect types (10 samples total). All categories produced output without errors. Summary text files (`{category}_summary.txt`) accompany each batch of PNGs.
+
+## 8. Deviations from Assigned Architecture
+
+**Live Dashboard / Operator Feedback Loop.** The reference architecture diagram includes a live dashboard stage with threshold adjustment, export, alerts, and trend visualization, connected by a dashed operator-feedback loop back into anomaly scoring. This project does not implement any of that. Instead, evaluation is performed via a CLI script (`evaluate.py`) that prints aggregate metrics to stdout, and explainability is delivered as static PNG files (`visualize_explainability.py`). No web UI, real-time streaming interface, or online threshold/memory-bank updates from operator feedback were built. This is a scoping decision driven by the college project timeline, not an oversight.
+
+**Depth Backbone Training Status.** The reference diagram labels the depth backbone as a "small trainable CNN." In the final locked-in baseline, this module is frozen at random initialization rather than trained. This is a deviation from the assigned architecture. Three separate experiments in Section 3 demonstrate that the frozen configuration outperforms trained variants: full E2E fine-tuning (Variant a) achieved an average I-AUROC of approximately 0.56, targeted depth/CLIP training (Variant b) achieved 0.7209, and the frozen baseline (Variant d) achieved 0.7779. Freezing the depth backbone was not assumed in advance — it was adopted after empirical evidence showed that training it on 200–290 images per category degraded performance relative to leaving it at random initialization.
