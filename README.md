@@ -1,6 +1,6 @@
 # Lightweight Dual-Camera Explainable Anomaly Detection
 
-A CPU-only, sub-1M parameter, unsupervised anomaly detection pipeline for MVTec 3D-AD data.
+A sub-1M parameter, unsupervised anomaly detection pipeline for MVTec 3D-AD data.
 Uses a frozen MobileNetV3-Small RGB backbone + a lightweight Depth CNN, fused via a single
 cross-attention layer trained to predict cross-modal features on normal samples only.
 
