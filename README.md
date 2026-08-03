@@ -204,6 +204,37 @@ are the main GPU (backbone inference is ~10x faster on GPU).
 
 ---
 
+## Comparison with Reference Papers
+
+A feature-by-feature comparison against the two reference papers this project builds on
+(**[CMDR-IAD](https://arxiv.org/abs/2603.03939)** — Cross-Modal Mapping & Dual-Branch Reconstruction, and
+**[Text-Guided Unified IAD](https://arxiv.org/abs/2604.22899)**):
+
+| Feature | **This Project** | **CMDR-IAD** (Paper 2) | **Text-Guided Unified IAD** (Paper 1) |
+|---|---|---|---|
+| **Goal** | Lightweight explainable IAD | Lightweight robust IAD | Unified multi-class IAD |
+| **Inputs** | RGB image + depth image + text (CLIP) | RGB image + 3D point cloud | RGB + 3D point cloud + text (CLIP) |
+| **Fusion** | Multi-head cross-attention, RGB↔Depth cross-reconstruction | Cross-modal mapping + dual-branch reconstruction | Geometry-aware mapper + text-guided MoE/attention |
+| **Backbone** | Frozen MobileNetV3-Small + tiny depth CNN | Frozen 2D + 3D encoders | RGB encoder + 3D point feature extractor |
+| **Unsupervised (normal-only)** | ✅ | ✅ | ✅ |
+| **Unique model per category** | Yes | Yes | **No — one model, many classes** |
+| **Datasets** | MVTec 3D-AD (6 cat) | MVTec 3D-AD (10) + polyurethane | MVTec 3D-AD (10) + Eyecandies |
+| **I-AUROC (detect if)** | **0.778** | 97.3% | 94.0% |
+| **P-AUROC (localize where)** | **0.959** | 99.6% | — (uses AUPRO) |
+| **AUPRO@30%** | not computed | 97.6% | 97.0% |
+| **Hardware** | **CPU-only, no GPU** | GPU | GPU (≈1,090 MB) |
+| **Memory footprint** | **< 1 MB fusion (~1.3M params total, 401K trainable)** | 465 MB+ | 1,090 MB its papers cite M3DM at 65 GB |
+| **Speed** | ~242 ms/img (~4 FPS CPU) | 24.6 FPS (GPU) | 10.1 FPS (GPU) |
+| **Explainability** | Per-branch heatmaps + text phrase + interactive 3D web demo | anomaly maps | anomaly maps |
+| **Reproducible (seed)** | Yes (seed=42, bit-identical) | — | — |
+
+**Honest summary:** The papers achieve higher detection AUROC (94–97%) using larger GPU models and real
+3D point-cloud networks. This project does not claim to beat them on accuracy. Instead it targets
+**CPU-only, sub-1M-param, explainable** deployment — exactly the project constraint — and is competitive
+on localization (P-AUROC 0.96). Full analysis in `docs/COMPARISON_WITH_PAPERS.md`.
+
+---
+
 ## Key Findings
 
 1. **k-NN scoring > Mahalanobis** on this dataset — more robust to non-Gaussian residual distributions
